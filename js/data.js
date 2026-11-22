@@ -454,3 +454,79 @@ const HEROES = {
     name: '守护', cost: 2, text: '使一个友方随从获得圣盾。', target: m => !m.kw.ds,
     use(ctx, t) { ctx.giveKw(t, 'ds'); } } },
 };
+
+/* ===================== 扩充随从 ===================== */
+C('b_badger', 2, ['beast'], '灌木獾', '🦡', 3, 2, {
+  text: '战吼：使一个友方野兽获得+2/+2。', target: m => isT(m, 'beast'),
+  battlecry(ctx, t) { if (t) ctx.buff(t, 2, 2); },
+});
+C('m_squirrel', 2, ['mech'], '发条松鼠', '🐿️', 1, 3, {
+  text: '每当你打出一个机械，获得+1/+1。',
+  onPlay(ctx, m) { if (isT(m, 'mech')) ctx.buff(ctx.self, ctx.mult, ctx.mult); },
+});
+C('d_pactimp', 2, ['demon'], '契约小鬼', '🤡', 2, 3, {
+  text: '每当你的英雄在你的回合受到伤害，获得+2/+1。',
+  onHeroDamaged(ctx) { ctx.buff(ctx.self, 2 * ctx.mult, ctx.mult); },
+});
+C('f_bugler', 2, ['fish'], '珊瑚号兵', '🦐', 2, 3, {
+  text: '每当你打出一个鱼人，获得+1/+1。',
+  onPlay(ctx, m) { if (isT(m, 'fish')) ctx.buff(ctx.self, ctx.mult, ctx.mult); },
+});
+C('dr_amber', 3, ['dragon'], '琥珀幼龙', '🦎', 2, 5, {
+  text: '每当你打出一条龙，获得+1/+2。',
+  onPlay(ctx, m) { if (isT(m, 'dragon')) ctx.buff(ctx.self, ctx.mult, 2 * ctx.mult); },
+});
+C('p_shipwright', 3, ['pirate'], '藏宝船匠', '🧰', 3, 3, {
+  text: '回合结束时：你每有一个其他海盗，下回合获得1枚铸币（最多2枚）。',
+  endTurn(ctx) { ctx.nextGold(Math.min(2, ctx.friends(m => isT(m, 'pirate')).length) * ctx.mult); },
+});
+C('m_drone', 3, ['mech'], '维修无人机', '🛰️', 2, 3, {
+  text: '回合结束时：使一个没有圣盾的随机友方机械获得圣盾。',
+  endTurn(ctx) { times(ctx.mult, () => { const m = ctx.rand(ctx.friends(x => isT(x, 'mech') && !x.kw.ds)); if (m) ctx.giveKw(m, 'ds'); }); },
+});
+C('n_quarter', 4, [], '军需官', '🎖️', 3, 4, {
+  text: '战吼：使你的所有其他随从获得+1/+1。',
+  battlecry(ctx) { ctx.friends().forEach(m => ctx.buff(m, 1, 1)); },
+});
+C('b_mammoth', 5, ['beast'], '雷蹄猛犸', '🦏', 5, 8, {
+  kw: { taunt: 1 }, text: '亡语：使你的野兽获得+3/+3。',
+  deathrattle(ctx) { ctx.all(m => isT(m, 'beast')).forEach(m => ctx.buff(m, 3 * ctx.mult, 3 * ctx.mult)); },
+});
+C('e_rover', 5, ['elemental'], '风暴巡游者', '🌬️', 6, 6, {
+  text: '出售时：本局游戏中酒馆里的随从获得+2/+2。',
+  onSell(ctx) { ctx.shopBonus(2 * ctx.mult, 2 * ctx.mult); },
+});
+C('u_colossus', 5, ['undead'], '骸骨巨像', '🏚️', 5, 5, {
+  text: '亡语：召唤两个具有复生的2/1骷髅。',
+  deathrattle(ctx) { times(2, () => { const m = ctx.summon('tk_skel', null, ctx.mult > 1); if (m) ctx.giveKw(m, 'reborn'); }); },
+});
+C('n_master', 6, [], '剑圣', '🥷', 3, 3, { kw: { windfury: 1, ds: 1, poison: 1 } });
+
+/* ===================== 饰品 =====================
+ * 第 6 回合选一个次级饰品，第 9 回合选一个高级饰品（需支付铸币）。
+ * 钩子：onGain(rctx) startTurn(rctx) endTurn(rctx) sot(cctx)；属性：freeRefresh extraSlot echo soul
+ */
+const TRINKETS = {};
+function K(id, grade, cost, name, art, text, o = {}) { TRINKETS[id] = Object.assign({ id, grade, cost, name, art, text }, o); }
+K('t_bell', 'lesser', 4, '铜铃', '🔔', '回合开始时：获得1枚额外的铸币。', { startTurn(ctx) { ctx.gainGold(1); } });
+K('t_badge', 'lesser', 1, '磨亮的徽章', '🎗️', '战斗开始时：使你最左侧的随从获得圣盾。', { sot(ctx) { if (ctx.board[0]) ctx.giveKw(ctx.board[0], 'ds'); } });
+K('t_net', 'lesser', 2, '旧渔网', '🥅', '你每回合的第一次刷新免费。', { freeRefresh: 1 });
+K('t_compass', 'lesser', 3, '旧罗盘', '🧭', '你的酒馆多展示一个随从。', { extraSlot: 1 });
+K('t_powder', 'lesser', 2, '火药桶', '🧨', '战斗开始时：对一个随机敌方随从造成5点伤害。', { sot(ctx) { const e = ctx.rand(ctx.enemies()); if (e) ctx.damage(e, 5); } });
+K('t_dice', 'lesser', 1, '骨制骰子', '🎲', '回合结束时：使一个随机友方随从获得+2/+2。', { endTurn(ctx) { const m = ctx.rand(ctx.p.board); if (m) ctx.buff(m, 2, 2); } });
+K('t_purse', 'lesser', 0, '金币袋', '👛', '立即获得4枚铸币。', { onGain(ctx) { ctx.gainGold(4); } });
+K('t_scroll', 'lesser', 2, '寻宝卷轴', '📜', '立即发现一个你当前酒馆等级的随从。', { onGain(ctx) { ctx.discover(ctx.p.tier); } });
+K('t_incense', 'lesser', 3, '复生熏香', '🪔', '战斗开始时：使你最左侧的随从获得复生。', { sot(ctx) { if (ctx.board[0]) ctx.giveKw(ctx.board[0], 'reborn'); } });
+K('t_banner', 'greater', 4, '战旗', '🚩', '战斗开始时：使你的所有随从获得+3/+3。', { sot(ctx) { ctx.all().forEach(m => ctx.buff(m, 3, 3)); } });
+K('t_mold', 'greater', 6, '黄金铸模', '🏆', '立即使你最左侧的非金色随从变为金色。', { onGain(ctx) { const m = ctx.p.board.find(x => !x.golden && !CARDS[x.id].token); if (m) ctx.makeGolden(m); } });
+K('t_relic', 'greater', 5, '圣盾圣物', '🛡️', '战斗开始时：使你最左侧的两个随从获得圣盾。', { sot(ctx) { ctx.board.slice(0, 2).forEach(m => ctx.giveKw(m, 'ds')); } });
+K('t_horn', 'greater', 4, '回响号角', '📯', '你的战吼会额外触发一次。', { echo: 1 });
+K('t_lamp', 'greater', 4, '魂灯', '🏮', '你的亡语会额外触发一次。', { soul: 1 });
+K('t_heart', 'greater', 4, '巨人之心', '❤️‍🔥', '回合结束时：使你攻击力最高的随从获得+4/+4。', { endTurn(ctx) { const b = ctx.p.board; if (b.length) { const m = b.reduce((a, x) => (x.atk > a.atk ? x : a)); ctx.buff(m, 4, 4); } } });
+K('t_pact', 'greater', 3, '卡池契约', '🎁', '立即获得一张三连奖励。', { onGain(ctx) { ctx.addReward(); } });
+K('t_shard', 'greater', 4, '风暴碎片', '💠', '战斗开始时：使你最左侧的随从获得风怒。', { sot(ctx) { if (ctx.board[0]) ctx.giveKw(ctx.board[0], 'windfury'); } });
+for (const t of TRIBE_KEYS) {
+  const n = TRIBES[t].name;
+  K('t_charm_' + t, 'lesser', 2, n + '护符', '🧿', `回合结束时：使你的${n}随从获得+1/+1。`, { tribe: t, endTurn(ctx) { ctx.p.board.filter(m => isT(m, t)).forEach(m => ctx.buff(m, 1, 1)); } });
+  K('t_drum_' + t, 'greater', 4, n + '战鼓', '🥁', `回合结束时：使你的${n}随从获得+2/+2。`, { tribe: t, endTurn(ctx) { ctx.p.board.filter(m => isT(m, t)).forEach(m => ctx.buff(m, 2, 2)); } });
+}

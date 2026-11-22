@@ -66,7 +66,7 @@ function newPlayer(id, heroId, isHuman, name) {
     hp: RULES.startHp, armor: h.armor, tier: 1, gold: 0, maxGold: 0,
     upgradeCost: RULES.upgradeBase[2] + 1, board: [], hand: [], shop: [], shopSpell: null,
     frozen: false, alive: true, place: 0, lastOpp: null, powerUsed: false, freeRefreshes: 0,
-    nextGold: 0, shopBonus: { atk: 0, hp: 0 }, lastBoard: [], discoverQ: [], history: [],
+    nextGold: 0, shopBonus: { atk: 0, hp: 0 }, lastBoard: [], discoverQ: [], history: [], trinkets: [], trinketOffer: null,
     ai: isHuman ? null : { levelBias: Math.random() * 2 - 1, greed: Math.random() },
   };
 }
@@ -118,7 +118,9 @@ function shopMinion(p, id) {
   m.atk += p.shopBonus.atk; m.hp += p.shopBonus.hp;
   return m;
 }
-function shopSize(p) { return RULES.shopSize[p.tier] + (HEROES[p.hero].power.extraSlot || 0); }
+function trinketsOf(p) { return (p.trinkets || []).map(id => TRINKETS[id]); }
+function trinketSum(p, key) { return trinketsOf(p).reduce((s, t) => s + (t[key] || 0), 0); }
+function shopSize(p) { return RULES.shopSize[p.tier] + (HEROES[p.hero].power.extraSlot || 0) + trinketSum(p, 'extraSlot'); }
 function rollShop(p) {
   p.shop.forEach(returnToPool);
   p.shop = [];
@@ -146,7 +148,8 @@ function rctx(p, self, mult = 1) {
     summonRandom(pred) { const id = rnd(Object.values(CARDS).filter(d => poolEligible(d) && pred(d)).map(d => d.id)); return id ? ctx.summon(id) : null; },
     gainGold(n) { p.gold += n; },
     nextGold(n) { p.nextGold += n; },
-    damageHero(n) { heroDamage(p, n, true); },
+    damageHero(n) { heroDamage(p, n, true); trigBoard(p, 'onHeroDamaged', null, n); },
+    addReward() { addToHand(p, { uid: UID++, reward: true, tier: Math.min(6, p.tier + 1) }); },
     buffShop(a, h) { p.shop.forEach(m => { m.atk += a; m.hp += h; }); },
     shopBonus(a, h) { p.shopBonus.atk += a; p.shopBonus.hp += h; ctx.buffShop(a, h); },
     addToShop(pred) { const id = drawFromPool(p.tier, d => pred({ id: d.id })); if (id) p.shop.push(shopMinion(p, id)); },
@@ -235,7 +238,7 @@ function resolveDiscover(p, idx) {
   if (GAME.pool[id] > 0) GAME.pool[id]--;
   if (!addToHand(p, newMinion(id))) GAME.pool[id]++;
 }
-function echoCount(p) { return p.board.reduce((s, m) => s + (CARDS[m.id].echo ? (m.golden ? 2 : 1) : 0), 0); }
+function echoCount(p) { return trinketSum(p, 'echo') + p.board.reduce((s, m) => s + (CARDS[m.id].echo ? (m.golden ? 2 : 1) : 0), 0); }
 
 /* ---------------- 招募动作 ---------------- */
 const ok = (extra) => Object.assign({ ok: true }, extra);
@@ -413,19 +416,54 @@ function startTurn(p) {
   p.nextGold = 0;
   if (p.tier < 6) p.upgradeCost = Math.max(0, p.upgradeCost - 1);
   p.powerUsed = false;
-  p.freeRefreshes = HEROES[p.hero].power.freeRefresh || 0;
+  p.freeRefreshes = (HEROES[p.hero].power.freeRefresh || 0) + trinketSum(p, 'freeRefresh');
   if (p.frozen) p.frozen = false; else rollShop(p);
   if (!p.shopSpell && p.shop.length === 0) rollShop(p);
   trigBoard(p, 'startTurn', null);
+  for (const t of trinketsOf(p)) if (t.startTurn) t.startTurn(rctx(p, null, 1));
+  if (g.turn === 6 || g.turn === 9) offerTrinkets(p, g.turn === 6 ? 'lesser' : 'greater');
+}
+function offerTrinkets(p, grade) {
+  const all = Object.values(TRINKETS).filter(t => t.grade === grade && (!t.tribe || GAME.tribes.includes(t.tribe)));
+  const tribal = sample(all.filter(t => t.tribe), 2);
+  let opts = sample([...sample(all.filter(t => !t.tribe), 4), ...tribal], 4);
+  if (!opts.some(t => t.cost <= p.gold)) opts[3] = all.reduce((a, b) => (b.cost < a.cost ? b : a));
+  p.trinketOffer = opts.map(t => t.id);
+  if (!p.isHuman) aiPickTrinket(p);
+}
+function actPickTrinket(p, id) {
+  if (!p.trinketOffer || !p.trinketOffer.includes(id)) return fail('无法选择该饰品');
+  const t = TRINKETS[id];
+  if (p.gold < t.cost) return fail('铸币不足');
+  p.gold -= t.cost;
+  p.trinkets.push(id);
+  p.trinketOffer = null;
+  if (t.onGain) t.onGain(rctx(p, null, 1));
+  if (t.freeRefresh) p.freeRefreshes += t.freeRefresh;
+  if (t.extraSlot && !p.frozen) { const id2 = drawFromPool(p.tier); if (id2) p.shop.push(shopMinion(p, id2)); }
+  return ok();
+}
+function aiPickTrinket(p) {
+  const main = mainTribe(p);
+  const score = t => (t.cost > p.gold ? -99 : 0) + (t.tribe ? (t.tribe === main ? 8 : -4) : 0) + (t.sot ? 3 : 0) + (t.echo || t.soul ? 2 : 0) + Math.random() * 4 - t.cost * 0.5;
+  const best = p.trinketOffer.map(id => TRINKETS[id]).reduce((a, b) => (score(b) > score(a) ? b : a));
+  actPickTrinket(p, best.id);
 }
 function endTurn(p) {
   trigBoard(p, 'endTurn', null);
   const pw = HEROES[p.hero].power;
   if (pw.endTurn) pw.endTurn(rctx(p, null, 1));
+  for (const t of trinketsOf(p)) if (t.endTurn) t.endTurn(rctx(p, null, 1));
 }
 function startTurnAll() {
   GAME.turn++;
   for (const p of alivePlayers()) startTurn(p);
+  GAME.nextPairs = makePairs().map(([a, b]) => [a.id, b.id]);
+}
+/** 本回合与该玩家配对的对手（id；-1 为幽灵） */
+function nextOpponentOf(pid) {
+  const pr = (GAME.nextPairs || []).find(x => x.includes(pid));
+  return pr ? (pr[0] === pid ? pr[1] : pr[0]) : null;
 }
 
 /* ---------------- 战斗 ---------------- */
@@ -553,7 +591,7 @@ class Combat {
       this.deaths(si);
     }
   }
-  soulCount(si) { return this.sides[si].board.reduce((s, m) => s + (this.alive(m) && CARDS[m.id].soul ? (m.golden ? 2 : 1) : 0), 0); }
+  soulCount(si) { return trinketSum(this.sides[si].p, 'soul') + this.sides[si].board.reduce((s, m) => s + (this.alive(m) && CARDS[m.id].soul ? (m.golden ? 2 : 1) : 0), 0); }
   deaths(active) {
     let any = false;
     for (let guard = 0; guard < 60; guard++) {
@@ -603,6 +641,14 @@ class Combat {
       if (pw.sot && this.sides[si].board.length) {
         pw.sot(this.ctx(si, null, 1));
         this.frame('sot', { hero: si });
+        this.deaths(si);
+      }
+    }
+    for (const si of [first, 1 - first]) {
+      for (const t of trinketsOf(this.sides[si].p)) {
+        if (!t.sot || !this.sides[si].board.some(m => this.alive(m))) continue;
+        t.sot(this.ctx(si, null, 1));
+        this.frame('sot', { trinket: t.id, side: si });
         this.deaths(si);
       }
     }
@@ -671,7 +717,7 @@ function makePairs() {
 }
 function ghostOf(dead) {
   const src = dead || rnd(GAME.players.filter(p => !p.alive)) || GAME.players[0];
-  return { id: -1, ghostOf: src.id, ghost: true, name: src.name + '（幽灵）', hero: src.hero, tier: src.tier, hp: 0, armor: 0,
+  return { id: -1, ghostOf: src.id, ghost: true, name: src.name + '（幽灵）', hero: src.hero, tier: src.lastTier || src.tier, hp: 0, armor: 0, trinkets: (src.trinkets || []).slice(),
     board: src.lastBoard.map(m => Object.assign({}, m, { kw: Object.assign({}, m.kw), dr: m.dr.map(e => Object.assign({}, e)) })) };
 }
 /** 玩家结束回合：AI 完成招募，生成全部对局结果（不立即结算伤害） */
@@ -683,7 +729,9 @@ function finishRecruit() {
     p.lastBoard = p.board.map(m => Object.assign({}, m, { kw: Object.assign({}, m.kw), dr: m.dr.map(e => Object.assign({}, e)) }));
     p.lastTier = p.tier;
   }
-  const pairs = makePairs();
+  const byId = id => (id === -1 ? ghostOf(g.lastDead) : g.players[id]);
+  const pairs = (g.nextPairs && g.nextPairs.every(pr => pr.every(id => id === -1 || g.players[id].alive)))
+    ? g.nextPairs.map(([a, b]) => [byId(a), byId(b)]) : makePairs();
   return pairs.map(([a, b]) => {
     const human = a.isHuman || b.isHuman;
     const [x, y] = b.isHuman ? [b, a] : [a, b];
@@ -810,6 +858,7 @@ function aiResolveDiscover(p) {
 }
 function aiRecruit(p) {
   const pw = HEROES[p.hero].power;
+  if (p.trinketOffer) aiPickTrinket(p);
   if (p.tier < 6 && p.gold >= p.upgradeCost && (p.tier < desiredTier(p) || p.upgradeCost <= 1)) actUpgrade(p);
   for (let guard = 0; guard < 60; guard++) {
     aiResolveDiscover(p);
@@ -852,6 +901,20 @@ function aiArrange(p) {
     return 2;
   };
   p.board.sort((a, b) => key(a) - key(b));
+}
+
+/* ---------------- 存档 ---------------- */
+function serializeGame() {
+  const g = GAME;
+  return JSON.stringify({ v: 1, uid: UID, g: Object.assign({}, g, { lastDead: g.lastDead ? g.lastDead.id : null }) });
+}
+function loadGame(str) {
+  const d = JSON.parse(str);
+  if (!d || d.v !== 1) return false;
+  UID = d.uid;
+  GAME = d.g;
+  GAME.lastDead = d.g.lastDead != null ? GAME.players[d.g.lastDead] : null;
+  return true;
 }
 
 if (typeof module !== 'undefined') module.exports = { RULES, CARDS, SPELLS, HEROES, TRIBES, newGame, finishRecruit, applyResults, nextTurn, alivePlayers, get GAME() { return GAME; }, actBuy, actPlay, actSell, actRefresh, actUpgrade, Combat };

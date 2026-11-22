@@ -414,3 +414,35 @@ button:focus-visible { outline: 2px solid var(--lantern); outline-offset: 2px; }
   .btn .lbl { display: none; }
   .gold-box .gm { display: none; }
 }
+
+/* ---------------- 饰品 / 计时 / 设置 ---------------- */
+.trinket-box { display: flex; align-items: center; gap: 4px; }
+.trinket { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 18px; cursor: help;
+  background: radial-gradient(circle at 40% 35%, #6b5124, #2b1e10); border: 2px solid var(--brass); box-shadow: 0 0 10px rgba(244,180,92,.25); }
+.pick-tk { animation: pulse 1s infinite; }
+.lb-item.next { border-color: var(--bad); border-style: dashed; }
+.lb-next { font-size: 10px; color: #ffd1c9; background: rgba(255,107,91,.22); padding: 0 5px; border-radius: 4px; }
+.btn-end small { display: block; font-family: var(--f-body); font-weight: 500; font-size: 12px; letter-spacing: 0; margin-top: 1px; }
+.btn-end.urgent { background: linear-gradient(180deg, #ff9a7e, #d9483b 60%, #8c1f17); color: #fff; animation: pulse .8s infinite; }
+.float.big { font-size: 38px; }
+.hero-portrait.hit, .lb-hero.hit { animation: shake .35s; }
+.tk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-top: 8px; }
+.tk-opt { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 12px 14px; cursor: pointer; text-align: center;
+  border-radius: 14px; border: 1px solid rgba(201,162,90,.5); background: linear-gradient(180deg, #2b1e16, #1a120d); transition: transform .15s, border-color .15s; }
+.tk-opt:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--lantern); }
+.tk-opt:disabled { opacity: .4; cursor: not-allowed; }
+.tk-opt .dt { font-size: 12.5px; color: #d9d2c0; line-height: 1.5; }
+.tk-cost { position: absolute; top: 8px; left: 8px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-family: var(--f-num); font-size: 15px; color: #2a1a08;
+  background: radial-gradient(circle at 40% 35%, #ffe7a3, #d6a23a 60%, #8a5d14); }
+.tk-big { font-size: 40px; line-height: 1.1; filter: drop-shadow(0 3px 3px rgba(0,0,0,.5)); }
+.lib-item .tk-big { font-size: 34px; width: 62px; text-align: center; }
+.tk-list { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #d9d2c0; }
+.tk-list b { color: var(--lantern); font-weight: 500; }
+.set-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid rgba(143,169,171,.15); }
+.set-row > span { width: 110px; font-weight: 500; }
+.set-row .lib-tabs { margin: 0; }
+.set-row small { width: 100%; color: var(--fog); }
+@media (max-width: 820px) {
+  .trinket { width: 26px; height: 26px; font-size: 14px; }
+  .pick-tk { padding: 5px 7px; }
+}

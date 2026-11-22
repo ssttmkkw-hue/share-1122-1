@@ -155,6 +155,8 @@ function renderRecruit() {
   $('#btnEnd').disabled = false;
   markSelection();
   if (p.discoverQ.length && !$('#modal').dataset.kind) openDiscover();
+  else if (p.trinketOffer && !UI.tkLater && !$('#modal').dataset.kind) openTrinkets();
+  saveSoon();
 }
 function renderHeroBar(p) {
   const h = HEROES[p.hero];
@@ -170,6 +172,8 @@ function renderHeroBar(p) {
     if (p.powerUsed) pb.classList.add('used'); else if (ps.can) pb.classList.add('ready');
   }
   $('#goldBox').innerHTML = `<span class="coin"></span><span class="gv">${p.gold}</span><span class="gm">/ ${p.maxGold}</span>`;
+  $('#trinketBox').innerHTML = (p.trinkets || []).map(id => `<span class="trinket" data-tk="${id}">${TRINKETS[id].art}</span>`).join('') +
+    (p.trinketOffer && UI.phase === 'recruit' ? '<button class="btn btn-brass pick-tk" data-act="pickTrinket">选择饰品</button>' : '');
 }
 function renderLeaderboard() {
   const g = GAME;
@@ -182,10 +186,13 @@ function renderLeaderboard() {
     const res = last && last.turn === g.turn - (UI.phase === 'recruit' ? 1 : 0) ? `<span class="lb-res ${last.res}">${last.res === 'win' ? '胜' : last.res === 'loss' ? '负' : '平'}</span>` : '';
     const delta = UI.lbDelta[p.id] ? `<span class="lb-delta">-${UI.lbDelta[p.id]}</span>` : '';
     const right = p.alive ? `<div class="lb-hp">${p.hp}${p.armor > 0 ? `<small>+${p.armor}护甲</small>` : ''}</div>` : `<div class="lb-place">第${p.place}名</div>`;
-    const cls = ['lb-item', p.isHuman ? 'me' : '', p.alive ? '' : 'dead', me.lastOpp === p.id ? 'opp' : ''].join(' ');
+    let nx = UI.phase === 'recruit' ? nextOpponentOf(0) : null;
+    if (nx === -1 && g.lastDead) nx = g.lastDead.id;
+    const isNext = nx === p.id;
+    const cls = ['lb-item', p.isHuman ? 'me' : '', p.alive ? '' : 'dead', isNext ? 'next' : (UI.phase !== 'recruit' && me.lastOpp === p.id ? 'opp' : '')].join(' ');
     return `<li class="${cls}" data-pid="${p.id}" title="${esc(p.name)}"><div class="lb-hero">${h.art}</div>
       <div class="lb-info"><div class="lb-name">${esc(p.isHuman ? '你 · ' + h.name : h.name)}</div>
-      <div class="lb-sub">酒馆 ${p.lastTier || p.tier} ${res}</div></div>${right}${delta}</li>`;
+      <div class="lb-sub">酒馆 ${p.lastTier || p.tier} ${res}${isNext ? `<span class="lb-next">${p.alive ? '下个对手' : '幽灵对手'}</span>` : ''}</div></div>${right}${delta}</li>`;
   }).join('');
   $('#lbTribes').innerHTML = '<span class="lb-turn" style="width:100%">本局种族</span>' + g.tribes.map(t => `<span class="chip" style="--tc:${TRIBES[t].color}">${TRIBES[t].name}</span>`).join('');
 }
@@ -246,8 +253,11 @@ function tipHTML(v) {
 }
 function showTip(el) {
   const v = el._v; if (!v) return;
+  $('#tip').innerHTML = tipHTML(v);
+  placeTip(el);
+}
+function placeTip(el) {
   const tip = $('#tip');
-  tip.innerHTML = tipHTML(v);
   tip.hidden = false;
   const r = el.getBoundingClientRect();
   const tw = tip.offsetWidth, th = tip.offsetHeight;
@@ -258,6 +268,13 @@ function showTip(el) {
   tip.style.left = x + 'px'; tip.style.top = y + 'px';
 }
 function hideTip() { $('#tip').hidden = true; }
+function trinketTip(id) { const t = TRINKETS[id]; return `<h4>${t.art} ${esc(t.name)}</h4><div class="meta"><span>${t.grade === 'lesser' ? '次级饰品' : '高级饰品'}</span><span>${t.cost} 铸币</span></div><div class="txt">${esc(t.text)}</div>`; }
+function showTipHTML(el, html) { $('#tip').innerHTML = html; placeTip(el); }
+document.addEventListener('pointerover', e => {
+  const t = e.target.closest('[data-tk]');
+  if (t) showTipHTML(t, trinketTip(t.dataset.tk));
+});
+document.addEventListener('pointerout', e => { const t = e.target.closest('[data-tk]'); if (t && !t.contains(e.relatedTarget)) hideTip(); });
 function fxAt(el, text, cls) {
   if (!el || !el.isConnected) return;
   const r = el.getBoundingClientRect();
@@ -271,8 +288,9 @@ function fxAt(el, text, cls) {
 }
 
 /* ================= 动作封装 ================= */
-function doAct(res, okMsg) {
-  if (!res.ok) { if (res.msg) toast(res.msg); return false; }
+function doAct(res, okMsg, snd) {
+  if (!res.ok) { if (res.msg) toast(res.msg); SFX.play('deny'); return false; }
+  SFX.play(res.tripled ? 'triple' : snd);
   if (res.tripled) toast('三连！获得一张金色随从', true);
   if (okMsg) toast(okMsg, true);
   UI.sel = null;
@@ -281,8 +299,8 @@ function doAct(res, okMsg) {
 }
 function buyItem(uid) {
   const p = ME();
-  if (String(uid).startsWith('spell-')) return doAct(actBuySpell(p));
-  return doAct(actBuy(p, +uid));
+  if (String(uid).startsWith('spell-')) return doAct(actBuySpell(p), null, 'buy');
+  return doAct(actBuy(p, +uid), null, 'buy');
 }
 /** 打出手牌（必要时进入选目标模式） */
 function playItem(uid, pos, dropTargetUid) {
@@ -293,12 +311,12 @@ function playItem(uid, pos, dropTargetUid) {
   const tg = playTargets(p, item);
   if (tg) {
     const dropT = dropTargetUid != null ? p.board.find(m => m.uid === +dropTargetUid) : null;
-    if (dropT && tg.magnetic.includes(dropT)) return doAct(actPlay(p, item.uid, pos, dropT.uid, { magnetize: true }));
-    if (dropT && tg.battlecry.includes(dropT)) return doAct(actPlay(p, item.uid, pos, dropT.uid));
+    if (dropT && tg.magnetic.includes(dropT)) return doAct(actPlay(p, item.uid, pos, dropT.uid, { magnetize: true }), null, 'play');
+    if (dropT && tg.battlecry.includes(dropT)) return doAct(actPlay(p, item.uid, pos, dropT.uid), null, 'play');
     if (tg.battlecry.length || tg.magnetic.length) { startTargeting({ kind: 'play', uid: item.uid, pos, list: tg.battlecry.map(m => m.uid), mags: tg.magnetic.map(m => m.uid), optional: tg.optional, spell: tg.spell }); return; }
   }
   if (p.board.length >= RULES.boardMax && isMinion(item)) return toast('战场已满（最多7个随从）');
-  doAct(actPlay(p, item.uid, pos));
+  doAct(actPlay(p, item.uid, pos), null, 'play');
 }
 function startTargeting(t) {
   UI.targeting = t; UI.sel = null; hideActPop();
@@ -322,9 +340,9 @@ function completeTarget(uid) {
   const t = UI.targeting; if (!t) return;
   const p = ME();
   endTargeting();
-  if (t.kind === 'power') return doAct(actPower(p, uid));
+  if (t.kind === 'power') return doAct(actPower(p, uid), null, 'play');
   const isMag = uid != null && t.mags.includes(uid) && !t.list.includes(uid);
-  doAct(actPlay(p, t.uid, t.pos, uid, { magnetize: isMag }));
+  doAct(actPlay(p, t.uid, t.pos, uid, { magnetize: isMag }), null, 'play');
 }
 function usePower() {
   const p = ME();
@@ -337,7 +355,7 @@ function usePower() {
     $('#targetBanner span').textContent = `🎯 ${pw.name}：选择一个友方随从`;
     return;
   }
-  doAct(actPower(p));
+  doAct(actPower(p), null, 'play');
 }
 
 /* ================= 行动菜单（选中卡牌） ================= */
@@ -376,7 +394,7 @@ $('#actPop').addEventListener('click', e => {
   const b = e.target.closest('button[data-act]'); if (!b || !UI.sel) return;
   const p = ME(); const uid = UI.sel.uid;
   const act = b.dataset.act;
-  if (act === 'sell') doAct(actSell(p, +uid));
+  if (act === 'sell') doAct(actSell(p, +uid), null, 'sell');
   else if (act === 'buy') buyItem(uid);
   else if (act === 'play') { UI.sel = null; hideActPop(); playItem(uid); }
   else if (act === 'left' || act === 'right') {
@@ -519,22 +537,22 @@ function endDrag(e) {
       const onCard = card && card.dataset.uid !== d.uid ? card.dataset.uid : null;
       if (item && item.spell && SPELLS[item.spell].target && onCard) {
         const t = p.board.find(m => String(m.uid) === onCard);
-        if (t && SPELLS[item.spell].target(t)) return doAct(actPlay(p, item.uid, null, t.uid));
+        if (t && SPELLS[item.spell].target(t)) return doAct(actPlay(p, item.uid, null, t.uid), null, 'play');
       }
       const magHost = item && isMinion(item) && CARDS[item.id].kw.magnetic && onCard && isT(p.board.find(m => String(m.uid) === onCard) || { id: 'n_barrel' }, 'mech') ? onCard : null;
       playItem(d.uid, pos, magHost);
     } else render();
   } else if (d.zone === 'board') {
-    if (zone === 'shop') doAct(actSell(p, +d.uid));
+    if (zone === 'shop') doAct(actSell(p, +d.uid), null, 'sell');
     else if (zone === 'board' && pos != null) { actMove(p, +d.uid, pos); render(); }
     else render();
   }
 }
 
 /* ================= 按钮 ================= */
-$('#btnUpgrade').addEventListener('click', () => { if (UI.phase === 'recruit') doAct(actUpgrade(ME())); });
-$('#btnRefresh').addEventListener('click', () => { if (UI.phase === 'recruit') doAct(actRefresh(ME())); });
-$('#btnFreeze').addEventListener('click', () => { if (UI.phase === 'recruit') doAct(actFreeze(ME())); });
+$('#btnUpgrade').addEventListener('click', () => { if (UI.phase === 'recruit') doAct(actUpgrade(ME(), null, 'upgrade')); });
+$('#btnRefresh').addEventListener('click', () => { if (UI.phase === 'recruit') doAct(actRefresh(ME(), null, 'refresh')); });
+$('#btnFreeze').addEventListener('click', () => { if (UI.phase === 'recruit') doAct(actFreeze(ME(), null, 'freeze')); });
 $('#btnPower').addEventListener('click', () => { if (UI.phase === 'recruit') usePower(); });
 $('#btnEnd').addEventListener('click', () => endTurnClick());
 $('#btnHelp').addEventListener('click', () => openHelp());
@@ -563,7 +581,13 @@ document.addEventListener('keydown', e => {
 /* ================= 回合结束 & 战斗回放 ================= */
 async function endTurnClick() {
   if (UI.phase !== 'recruit') return;
-  if (ME().discoverQ.length) { openDiscover(); return; }
+  const me = ME();
+  if (me.discoverQ.length) { openDiscover(); return; }
+  if (me.trinketOffer) {
+    if (me.trinketOffer.some(id => TRINKETS[id].cost <= me.gold)) { openTrinkets(); return; }
+    me.trinketOffer = null;
+  }
+  stopTimer();
   UI.phase = 'combat';
   endTargeting(); UI.sel = null; hideActPop(); hideTip();
   $('#btnEnd').disabled = true;
@@ -576,10 +600,14 @@ async function endTurnClick() {
   UI.lbDelta = {};
   GAME.players.forEach(p => { const dlt = before[p.id] - (p.hp + p.armor); if (dlt > 0) UI.lbDelta[p.id] = dlt; });
   renderLeaderboard();
-  if (!ME().alive || GAME.over) { UI.phase = 'over'; await sleep(700); openGameOver(); return; }
+  if (!ME().alive || GAME.over) { UI.phase = 'over'; clearSave(); await sleep(700); openGameOver(); return; }
   nextTurn();
   UI.phase = 'recruit';
+  UI.tkLater = false;
   render();
+  startTimer();
+  if (GAME.turn === 6) toast('饰品商人来了：选择一个次级饰品', true);
+  if (GAME.turn === 9) toast('饰品商人来了：选择一个高级饰品', true);
   if (GAME.turn === 2) toast('提示：拖动随从可以调整站位，拖回酒馆可以出售', true);
 }
 function setCombatView(r) {
@@ -611,7 +639,7 @@ function diffFx(prev, s) {
     const o = pm.get(m.uid); if (!o) continue;
     const el = cbEl(m.uid); if (!el) continue;
     if (m.hp < o.hp) { fxAt(el, '-' + (o.hp - m.hp), 'dmg'); el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); }
-    if (o.kw.ds && !m.kw.ds) fxAt(el, '圣盾破碎', 'info');
+    if (o.kw.ds && !m.kw.ds) { fxAt(el, '圣盾破碎', 'info'); SFX.play('shield'); }
     if (m.dead && !o.dead && m.hp >= o.hp) fxAt(el, '☠', 'dmg');
     const da = m.atk - o.atk, dh = m.hp - o.hp;
     if ((da > 0 && dh >= 0) || (dh > 0 && da >= 0)) fxAt(el, `+${da}/+${Math.max(0, dh)}`, 'buff');
@@ -656,17 +684,19 @@ async function playCombat(r) {
   for (let i = 1; i < fr.length && !UI.skip; i++) {
     const f = fr[i];
     if (f.type === 'attack') {
-      await lunge(f.a, f.t, () => renderSnap(f.s, prev));
+      await lunge(f.a, f.t, () => { SFX.play('hit'); renderSnap(f.s, prev); });
       await wait(160);
     } else if (f.type === 'sot') {
       const el = f.src ? cbEl(f.src) : null;
       if (el) { el.classList.add('lit'); fxAt(el, '战斗开始时', 'info'); }
       else if (f.hero != null) toast(`${HEROES[r.combat.sides[f.hero].p.hero].power.name}（英雄技能）`, true);
+      else if (f.trinket) toast(`${f.side === 0 ? '你的' : '对手的'}饰品：${TRINKETS[f.trinket].art} ${TRINKETS[f.trinket].name}`, true);
       await wait(380);
       renderSnap(f.s, prev);
       await wait(420);
       if (el) el.classList.remove('lit');
     } else if (f.type === 'deaths') {
+      SFX.play('death');
       renderSnap(f.s, prev);
       await wait(380);
     } else {
@@ -681,6 +711,12 @@ async function playCombat(r) {
   rb.className = 'result-banner ' + (winner === 0 ? 'win' : winner === 1 ? 'loss' : 'tie');
   rb.textContent = winner === 0 ? `胜利！对 ${r.b.name} 造成 ${dmg} 点伤害` : winner === 1 ? `失败，受到 ${dmg} 点伤害` : '平局';
   rb.hidden = false;
+  SFX.play(winner === 0 ? 'win' : winner === 1 ? 'lose' : 'death');
+  if (winner >= 0) {
+    await sleep(350);
+    const tgt = winner === 0 ? $('#oppCtl .lb-hero') : $('#heroPortrait');
+    if (tgt) { SFX.play('heroHit'); fxAt(tgt, '-' + dmg, 'dmg big'); tgt.classList.remove('hit'); void tgt.offsetWidth; tgt.classList.add('hit'); }
+  }
   await sleep(1500);
   rb.hidden = true;
   // 清空战斗行，回到招募
@@ -708,6 +744,11 @@ $('#modal').addEventListener('click', e => {
   else if (a === 'again') openHeroSelect();
   else if (a === 'help') openHelp(true);
   else if (a === 'back') openHeroSelect();
+  else if (a === 'resume') resumeGame();
+  else if (a === 'settings') openSettings();
+  else if (a === 'set') { const k = b.dataset.k; SET[k] = k === 'speed' ? +b.dataset.v : b.dataset.v === '1'; if (k === 'speed') UI.speed = SET.speed; if (k === 'timer') { if (UI.phase === 'recruit') startTimer(); } SFX.play('buy'); openSettings(); }
+  else if (a === 'tk') { const p = ME(); const r = actPickTrinket(p, b.dataset.id); if (!r.ok) { toast(r.msg); SFX.play('deny'); return; } SFX.play('upgrade'); closeModal(); render(); }
+  else if (a === 'tkLater') { UI.tkLater = true; closeModal(); render(); }
 });
 function staticCard(v) { const el = makeCard(v, 'static'); return el.outerHTML; }
 function staticMinion(id, golden, atk, hp, extra = {}) {
@@ -727,7 +768,7 @@ function openHeroSelect() {
     <div class="hero-grid">${opts.map(id => { const h = HEROES[id]; return `<button class="hero-card" data-act="hero" data-hero="${id}">
       <div class="hc-top"><div class="lb-hero">${h.art}</div><div><div class="hc-name">${esc(h.name)}</div><div class="hc-armor">生命 ${RULES.startHp} · 护甲 ${h.armor}</div></div></div>
       <div class="hc-pw"><b>${esc(h.power.name)}${h.power.passive ? '' : `（${h.power.cost}）`}</b>：${esc(h.power.text)}</div></button>`; }).join('')}</div>
-    <div class="modal-actions"><button class="btn btn-ghost" data-act="help">先看看规则</button></div>`, 'hero', false);
+    <div class="modal-actions">${savedTurn() ? `<button class="btn btn-brass" data-act="resume">继续上一局（第 ${savedTurn()} 回合）</button>` : ''}<button class="btn btn-ghost" data-act="help">先看看规则</button><button class="btn btn-ghost" data-act="settings">设置</button></div>`, 'hero', false);
 }
 function startGame(heroId) {
   newGame(heroId);
@@ -735,6 +776,8 @@ function startGame(heroId) {
   UI.phase = 'recruit'; UI.lbDelta = {}; UI.sel = null; UI.targeting = null;
   $('#shopRow').innerHTML = ''; $('#boardRow').innerHTML = ''; $('#handRow').innerHTML = '';
   render();
+  startTimer();
+  SFX.play('upgrade');
   toast('本局种族：' + GAME.tribes.map(t => TRIBES[t].name).join('、'), true);
 }
 function openDiscover() {
@@ -755,6 +798,8 @@ function openHelp(fromSelect) {
    <li>战场最多 7 个随从，手牌最多 10 张。所有玩家共享同一个随从卡池。</li>
    <li><b>三连</b>：集齐 3 张相同随从会合成一张金色随从（属性翻倍、效果翻倍）。打出金色随从可获得三连奖励，从更高一级中发现一张随从。</li>
    <li>每局随机启用 ${RULES.lobbyTribes} 个种族，另外 3 个种族的随从不会出现。</li>
+   <li><b>饰品</b>：第 6 回合可以花铸币购买一个次级饰品，第 9 回合购买一个高级饰品，效果持续整局。</li>
+   <li>排行榜上标着“下个对手”的就是你这回合要对战的玩家。</li>
   </ul>
   <h3>战斗阶段</h3><ul>
    <li>随从数量多的一方先攻，相同则随机。双方从左到右轮流派出随从攻击随机敌人（嘲讽优先）。</li>
@@ -775,7 +820,8 @@ function openLibrary(tier) {
   const ids = Object.values(CARDS).filter(d => !d.token && d.tier === tier);
   const spells = Object.values(SPELLS).filter(s => s.tier === tier);
   openModal(`<h2>卡牌图鉴</h2><p class="lead">半透明的卡牌属于本局未启用的种族。</p>
-   <div class="lib-tabs">${[1, 2, 3, 4, 5, 6].map(t => `<button class="btn ${t === tier ? 'on' : ''}" data-act="libtier" data-t="${t}">${t} 级</button>`).join('')}</div>
+   <div class="lib-tabs">${[1, 2, 3, 4, 5, 6].map(t => `<button class="btn ${t === tier ? 'on' : ''}" data-act="libtier" data-t="${t}">${t} 级</button>`).join('')}<button class="btn ${tier === 7 ? 'on' : ''}" data-act="libtier" data-t="7">饰品</button></div>
+   ${tier === 7 ? `<div class="lib-grid">${Object.values(TRINKETS).filter(t => !t.tribe || !GAME || GAME.tribes.includes(t.tribe)).map(t => `<div class="lib-item"><div class="tk-big">${t.art}</div><div><div class="li-name">${esc(t.name)}</div><div class="li-meta">${t.grade === 'lesser' ? '次级饰品（第 6 回合）' : '高级饰品（第 9 回合）'} · ${t.cost} 铸币</div><div class="li-txt">${esc(t.text)}</div></div></div>`).join('')}</div>` : ''}
    <div class="lib-grid">${ids.map(d => `<div class="lib-item ${GAME && !poolEligible(d) ? 'off' : ''}">${staticMinion(d.id, false)}<div><div class="li-name">${esc(d.name)}</div>
      <div class="li-meta">${esc(tribeLabel(d) || '中立')} · ${d.atk}/${d.hp}${GAME && GAME.pool[d.id] != null ? ` · 卡池剩余 ${GAME.pool[d.id]}` : ''}</div>
      <div class="li-txt">${esc([...Object.keys(d.kw).map(k => KW_NAMES[k]), d.text].filter(Boolean).join('。'))}</div></div></div>`).join('')}
@@ -787,6 +833,7 @@ function openPlayer(pid) {
   const board = p.isHuman && UI.phase === 'recruit' ? p.board : p.lastBoard;
   openModal(`<h2>${h.art} ${esc(p.isHuman ? '你 · ' + h.name : h.name)}</h2>
    <p class="lead">生命 ${p.hp}${p.armor ? ` · 护甲 ${p.armor}` : ''} · 酒馆 ${p.lastTier || p.tier}${p.alive ? '' : ` · 第 ${p.place} 名`}<br><b style="color:var(--lantern);font-weight:500">${esc(h.power.name)}</b>：${esc(h.power.text)}</p>
+   ${(p.trinkets || []).length ? `<h3>饰品</h3><div class="tk-list">${p.trinkets.map(id => `<div><b>${TRINKETS[id].art} ${esc(TRINKETS[id].name)}</b>：${esc(TRINKETS[id].text)}</div>`).join('')}</div>` : ''}
    <h3>${p.isHuman ? '当前战场' : '上一场战斗的阵容'}</h3>
    <div class="board-view">${board.length ? board.map(m => staticMinion(m.id, m.golden, m.atk, m.hp, { kw: Object.assign({}, m.kw), dr: m.dr.length > 0, mags: m.mags || 0 })).join('') : '<span class="empty-hint">暂无</span>'}</div>
    <h3>战绩</h3><div class="hist">${p.history.length ? p.history.slice().reverse().map(x => `<div class="${x.res}">第 ${x.turn} 回合 · ${x.res === 'win' ? '胜' : x.res === 'loss' ? '负' : '平'} · ${esc(x.opp)}${x.dmg ? ` · ${x.res === 'win' ? '造成' : '受到'} ${x.dmg} 伤害` : ''}</div>`).join('') : '<span class="empty-hint">还没有战斗</span>'}</div>`, 'player', true);
@@ -804,6 +851,79 @@ function openGameOver() {
    <div class="board-view">${me.lastBoard.map(m => staticMinion(m.id, m.golden, m.atk, m.hp, { kw: Object.assign({}, m.kw), dr: m.dr.length > 0 })).join('') || '<span class="empty-hint">空</span>'}</div>
    <div class="modal-actions"><button class="btn btn-brass" data-act="again">再来一局</button></div>`, 'over', false);
 }
+
+/* ================= 饰品 / 设置 / 计时 / 存档 ================= */
+$('#trinketBox').addEventListener('click', e => { if (e.target.closest('[data-act=pickTrinket]')) { UI.tkLater = false; openTrinkets(); } });
+$('#btnSet').addEventListener('click', () => openSettings());
+document.addEventListener('pointerdown', () => SFX.unlock(), { once: true });
+function openTrinkets() {
+  const p = ME(); if (!p.trinketOffer) return;
+  const grade = TRINKETS[p.trinketOffer[0]].grade;
+  openModal(`<h2>${grade === 'lesser' ? '次级饰品' : '高级饰品'}</h2><p class="lead">花费铸币购买一个饰品，效果持续整局。你现在有 ${p.gold} 枚铸币。</p>
+   <div class="tk-grid">${p.trinketOffer.map(id => { const t = TRINKETS[id]; const can = p.gold >= t.cost;
+     return `<button class="tk-opt" data-act="tk" data-id="${id}" ${can ? '' : 'disabled'}><span class="tk-cost">${t.cost}</span><span class="tk-big">${t.art}</span><span class="li-name">${esc(t.name)}</span><span class="dt">${esc(t.text)}</span></button>`; }).join('')}</div>
+   <div class="modal-actions"><button class="btn btn-ghost" data-act="tkLater">先看看酒馆，稍后再选</button></div>`, 'trinket', false);
+}
+function openSettings() {
+  const opt = (k, v, label) => `<button class="btn ${String(SET[k]) === String(v) || (SET[k] === true && v === '1') || (SET[k] === false && v === '0') ? 'on' : ''}" data-act="set" data-k="${k}" data-v="${v}">${label}</button>`;
+  openModal(`<h2>设置</h2>
+   <div class="set-row"><span>音效</span><div class="lib-tabs">${opt('sfx', '1', '开')}${opt('sfx', '0', '关')}</div></div>
+   <div class="set-row"><span>回合计时</span><div class="lib-tabs">${opt('timer', '1', '开')}${opt('timer', '0', '关')}</div><small>开启后每回合有 40–90 秒的招募时间，时间到会自动结束回合。</small></div>
+   <div class="set-row"><span>默认战斗速度</span><div class="lib-tabs">${opt('speed', 1, '1×')}${opt('speed', 2, '2×')}${opt('speed', 4, '4×')}</div></div>
+   ${UI.phase === 'select' ? '<div class="modal-actions"><button class="btn btn-brass" data-act="back">返回</button></div>' : ''}`, 'settings', UI.phase !== 'select');
+}
+function stopTimer() { clearInterval(UI.tmr); UI.deadline = null; updateEndBtn(); }
+function startTimer() {
+  clearInterval(UI.tmr); UI.deadline = null;
+  if (SET.timer && UI.phase === 'recruit') {
+    const secs = Math.min(90, 35 + GAME.turn * 5);
+    UI.deadline = Date.now() + secs * 1000;
+    UI.lastTick = null;
+    UI.tmr = setInterval(tickTimer, 200);
+  }
+  updateEndBtn();
+}
+function updateEndBtn() {
+  const b = $('#btnEnd');
+  if (!UI.deadline) { b.innerHTML = '结束回合'; b.classList.remove('urgent'); return; }
+  const left = Math.max(0, Math.ceil((UI.deadline - Date.now()) / 1000));
+  b.innerHTML = `结束回合<small>${left} 秒</small>`;
+  b.classList.toggle('urgent', left <= 10);
+  if (left <= 5 && left !== UI.lastTick && left > 0) { UI.lastTick = left; SFX.play('tick'); }
+}
+function tickTimer() {
+  if (UI.phase !== 'recruit' || !UI.deadline) { clearInterval(UI.tmr); return; }
+  updateEndBtn();
+  if (Date.now() >= UI.deadline) {
+    clearInterval(UI.tmr);
+    const p = ME();
+    if (UI.drag) cancelDrag();
+    endTargeting();
+    while (p.discoverQ.length) resolveDiscover(p, 0);
+    if (p.trinketOffer) { const c = p.trinketOffer.filter(id => TRINKETS[id].cost <= p.gold); if (c.length) actPickTrinket(p, c[0]); else p.trinketOffer = null; }
+    closeModal();
+    toast('时间到，自动结束回合', true);
+    endTurnClick();
+  }
+}
+let saveTimer = null;
+function saveNow() { clearTimeout(saveTimer); if (UI.phase === 'recruit' && GAME && !GAME.over && ME().alive) { try { localStorage.setItem('mh_save', serializeGame()); } catch (e) { /* 忽略 */ } } }
+function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 300); }
+window.addEventListener('pagehide', saveNow);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
+function clearSave() { try { localStorage.removeItem('mh_save'); } catch (e) { /* 忽略 */ } }
+function savedTurn() { try { const s = localStorage.getItem('mh_save'); if (!s) return 0; return JSON.parse(s).g.turn || 0; } catch (e) { return 0; } }
+function resumeGame() {
+  let ok = false;
+  try { ok = loadGame(localStorage.getItem('mh_save')); } catch (e) { ok = false; }
+  if (!ok || !ME().alive) { clearSave(); toast('存档无法读取，已重新开始'); openHeroSelect(); return; }
+  closeModal();
+  UI.phase = 'recruit'; UI.lbDelta = {}; UI.sel = null; UI.targeting = null; UI.tkLater = false;
+  $('#shopRow').innerHTML = ''; $('#boardRow').innerHTML = ''; $('#handRow').innerHTML = '';
+  render(); startTimer();
+  toast(`已继续第 ${GAME.turn} 回合`, true);
+}
+UI.speed = SET.speed || 1;
 
 /* ================= 启动 ================= */
 openHeroSelect();

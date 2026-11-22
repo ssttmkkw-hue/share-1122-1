@@ -23,21 +23,25 @@
 | 种族轮换 | 8 个种族中每局随机启用 5 个 |
 | 三连 | 3 张相同随从合成金色（属性 = 2 倍基础 + 所有增益，效果翻倍）；打出金色随从获得三连奖励，发现一张高一级随从 |
 | 酒馆法术 | 每次刷新酒馆附带 1 个法术槽 |
+| 饰品 | 第 6 回合花铸币选 1 个次级饰品、第 9 回合选 1 个高级饰品（4 选 1，共 33 种，含按种族的护符 / 战鼓） |
+| 对手预告 | 招募阶段就能在排行榜上看到本回合的“下个对手” |
 | 战斗 | 随从多者先攻；从左到右轮流攻击，嘲讽优先；伤害 = 酒馆等级 + 存活随从等级之和（前期有伤害上限） |
 | 关键词 | 嘲讽、圣盾、剧毒、烈毒、风怒、复生、顺劈、磁力、战吼、亡语、战斗开始时、复仇（X）、光环 |
 | 特殊效果 | 战吼触发两次、亡语触发两次、吞噬、商店增益（本局永久）、战斗中获得永久增益、亡语衍生物插队攻击 |
 | 英雄 | 12 名原创英雄，主动 / 被动技能各半；开局 4 选 1 |
-| AI | 按流派与三连权重评估、按节奏升本、满场时替换弱随从、自动站位 |
+| AI | 按流派与三连权重评估、按节奏升本、满场时替换弱随从、自动站位、按流派挑选饰品 |
+| 体验 | 合成音效（可关闭）、可选回合计时、默认战斗速度、战斗结束英雄受击动画、自动存档（刷新页面可继续） |
 
 ## 文件结构
 
 ```
 index.html        页面骨架
 css/style.css     样式（窄屏自适应）
-js/data.js        种族、关键词、随从（约 90 张）、法术、英雄
+js/data.js        种族、关键词、随从（约 100 张）、法术、英雄、饰品
 js/engine.js      规则引擎：卡池、招募动作、三连、战斗模拟、回合流程、AI
-js/ui.js          界面：增量渲染、拖拽、选目标、战斗回放动画、弹窗
+js/sfx.js         设置存储与 WebAudio 合成音效
+js/ui.js          界面：增量渲染、拖拽、选目标、战斗回放动画、弹窗、计时、存档
 ```
 
 想加新随从，只需在 `js/data.js` 里调用 `C(id, 等级, [种族], 名称, 图标, 攻, 血, { 钩子 })`。可用钩子：
-`battlecry` `deathrattle` `sot` `endTurn` `startTurn` `onPlay` `onSummon` `onBuy` `onSell` `onAttack` `onFriendlyAttack` `afterFriendlyAttack` `onDamaged` `onFriendlyDeath` `onShieldLost` `avenge + onAvenge` `aura`。
+`battlecry` `deathrattle` `sot` `endTurn` `startTurn` `onPlay` `onSummon` `onBuy` `onSell` `onAttack` `onFriendlyAttack` `afterFriendlyAttack` `onDamaged` `onFriendlyDeath` `onShieldLost` `onHeroDamaged` `avenge + onAvenge` `aura`。新饰品用 `K(id, 'lesser'|'greater', 费用, 名称, 图标, 文字, { 钩子 })`。
