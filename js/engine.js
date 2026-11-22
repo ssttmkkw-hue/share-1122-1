@@ -612,6 +612,7 @@ class Combat {
       }
       if (!ds.length) break;
       any = true;
+      const reborn = [];
       for (const d of ds) d.soul = this.soulCount(d.si);
       for (const d of ds) {
         const ex = { pos: d.pos, atk: d.atk };
@@ -621,7 +622,7 @@ class Combat {
         }
         if (d.m.kw.reborn) {
           const r = this.summon(d.si, d.m.id, ex.pos, d.m.golden);
-          if (r) { r.hp = 1; r.kw.reborn = 0; ex.pos++; }
+          if (r) { r.hp = 1; r.kw.reborn = 0; reborn.push(r.uid); ex.pos++; }
         }
         for (const o of [...this.sides[d.si].board]) {
           if (!this.alive(o)) continue;
@@ -633,7 +634,7 @@ class Combat {
           }
         }
       }
-      this.frame('deaths');
+      this.frame('deaths', { reborn });
     }
     return any;
   }

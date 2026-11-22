@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;900&display=swap">
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/tavern.css">
 </head>
 <body>
 <div id="app">
@@ -33,15 +34,19 @@
       <button id="btnSet" class="btn btn-ghost" title="设置" aria-label="设置">⚙</button>
     </header>
 
+    <div id="arena">
     <section id="shopZone" class="zone zone-shop">
       <div class="zone-label" id="shopLabel">酒馆</div>
       <div class="row" id="shopRow"></div>
     </section>
 
+    <div class="phase-divider"><span id="phaseTitle"></span></div>
     <section id="boardZone" class="zone zone-board">
+      <div class="zone-label" id="boardLabel"></div>
       <div class="row" id="boardRow"></div>
     </section>
 
+    </div>
     <section id="heroBar">
       <div id="heroPortrait" class="hero-portrait"></div>
       <button id="btnPower" class="power-btn"></button>
@@ -56,6 +61,7 @@
     </section>
 
     <section id="handZone" class="zone zone-hand">
+      <div class="zone-label" id="handLabel"></div>
       <div class="row hand" id="handRow"></div>
     </section>
 
@@ -73,6 +79,8 @@
 <script src="js/data.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/sfx.js"></script>
+<script src="js/art.js"></script>
+<script src="js/combat-fx.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/net.js"></script>
 <script src="js/online.js"></script>
