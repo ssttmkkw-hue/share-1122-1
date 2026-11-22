@@ -28,21 +28,25 @@ function openMenu() {
   MODE = 'local'; UI.meId = 0;
   stopTimer();
   const saved = savedTurn();
-  openModal(`<h2>雾港棋馆</h2>
-    <p class="lead">八名旅人围坐一桌：招募随从、合成三连、升级酒馆，再让随从们自动开战。活到最后的人获胜。</p>
-    <div class="menu-grid">
-      <button class="menu-btn" data-act="solo"><span class="mb-ic">🃏</span><b>单人游戏</b><small>与 7 个 AI 对战，可选难度</small></button>
-      <button class="menu-btn" data-act="quick"><span class="mb-ic">⚡</span><b>快速匹配</b><small>自动和在线玩家凑桌，不足 8 人补 AI</small></button>
-      <button class="menu-btn" data-act="create"><span class="mb-ic">🏠</span><b>创建房间</b><small>把房间号发给朋友，房主决定何时开局</small></button>
-    </div>
-    <div class="menu-form">
-      <label class="set-row"><span>昵称</span><input id="nameInput" class="inp" maxlength="12" placeholder="随便起个名字" value="${esc(playerName())}"></label>
-      <div class="set-row"><span>加入房间</span><input id="codeInput" class="inp code-inp" maxlength="4" placeholder="房间号" autocomplete="off"><button class="btn btn-brass" data-act="join">加入</button></div>
-    </div>
-    <h3>公开房间 <button class="btn btn-ghost" data-act="refreshRooms">刷新</button></h3>
-    <div id="roomList" class="room-list"><span class="empty-hint">连接服务器后显示</span></div>
-    <div id="netStatus" class="net-status"></div>
-    <div class="modal-actions">${saved ? `<button class="btn btn-brass" data-act="resume">继续单人游戏（第 ${saved} 回合）</button>` : ''}<button class="btn btn-ghost" data-act="help">规则</button><button class="btn btn-ghost" data-act="settings">设置</button></div>`, 'menu', false);
+  openModal(`<header class="lobby-nav"><div class="lobby-brand"><i class="compass" aria-hidden="true">✦</i><span>雾港棋馆</span></div>
+    <nav aria-label="大厅导航"><button data-act="help">规则手册</button><button data-act="settings">设置</button></nav></header>
+    <main class="lobby-main">
+      <div class="lobby-hero"><div class="wordmark" lang="en">Mistharbor Tavern</div><h1>雾港棋馆</h1>
+        <div class="filigree" aria-hidden="true"><i></i>✧<i></i></div>
+        <p>招募随从，布阵交锋。八位旅人，争夺酒馆的最后一席。</p>
+        ${saved ? `<button class="btn btn-brass" data-act="resume">继续单人游戏 · 第 ${saved} 回合　→</button>` : ''}</div>
+      <section class="mode-section"><h2 class="ruled">选择对战模式</h2>
+        <div class="menu-grid">
+          <button class="mode-card solo" data-act="solo"><span class="mode-copy"><b>单人冒险</b><small>挑战七位 AI 对手</small></span><i aria-hidden="true">→</i></button>
+          <button class="mode-card quick" data-act="quick"><span class="mode-copy"><b>快速匹配</b><small>与在线玩家同桌竞技</small></span><i aria-hidden="true">→</i></button>
+          <button class="mode-card create" data-act="create"><span class="mode-copy"><b>创建房间</b><small>邀请好友，相聚酒馆</small></span><i aria-hidden="true">→</i></button>
+        </div></section>
+      <div class="lobby-social"><section><h2>旅人登记</h2>
+        <div class="lobby-form"><label for="nameInput">昵称</label><input id="nameInput" class="inp" maxlength="12" placeholder="输入昵称" value="${esc(playerName())}">
+        <label for="codeInput">加入房间</label><div class="join-field"><input id="codeInput" class="inp code-inp" maxlength="4" placeholder="房间号" autocomplete="off"><button class="btn" data-act="join">加入</button></div></div></section>
+        <section><div class="room-heading"><h2>公开房间</h2><button class="text-action" data-act="refreshRooms">↻ 刷新</button></div>
+        <div id="roomList" class="room-list"><span class="empty-hint">连接服务器后显示</span></div><div id="netStatus" class="net-status" role="status"></div></section></div>
+    </main>`, 'menu', false);
   $('#nameInput').addEventListener('change', e => setName(e.target.value));
   $('#codeInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('[data-act=join]').click(); });
   if (SANDBOXED) onNetStatus(SANDBOX_MSG, 'bad');
@@ -91,7 +95,7 @@ function openOnlineHeroPick(m) {
   const picked = m.picked;
   openModal(`<h2>选择英雄</h2><p class="lead">本桌 ${m.players} 名真人玩家。<span id="pickLeft"></span></p>
     <div class="hero-grid">${m.options.map(id => { const h = HEROES[id]; return `<button class="hero-card ${picked === id ? 'chosen' : ''}" data-act="opick" data-hero="${id}" ${picked ? 'disabled' : ''}>
-      <div class="hc-top"><div class="lb-hero">${h.art}</div><div><div class="hc-name">${esc(h.name)}</div><div class="hc-armor">生命 ${RULES.startHp} · 护甲 ${h.armor}</div></div></div>
+      <div class="hc-top">${heroPortrait(id)}<div><div class="hc-name">${esc(h.name)}</div><div class="hc-armor">生命 ${RULES.startHp} · 护甲 ${h.armor}</div></div></div>
       <div class="hc-pw"><b>${esc(h.power.name)}${h.power.passive ? '' : `（${h.power.cost}）`}</b>：${esc(h.power.text)}</div></button>`; }).join('')}</div>
     <p id="pickWait" class="lead" style="margin-top:14px">${picked ? '已选择，等待其他玩家…' : ''}</p>`, 'heroPick', false);
   clearInterval(UI.pickTmr);

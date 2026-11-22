@@ -6,7 +6,7 @@
 
 ## 怎么玩
 
-- **单人**：直接用浏览器打开 `index.html`，主菜单选“单人游戏”，可选 AI 难度（简单 / 普通 / 困难）。
+- **单人**：直接用浏览器打开 `index.html`，主菜单选“单人冒险”，可选 AI 难度（简单 / 普通 / 困难）。
 - **联机**：部署到 Render 后打开服务的网址，主菜单选“快速匹配”或“创建房间”。
 
 ## 联机
@@ -67,7 +67,11 @@ npm start          # 打开 http://localhost:10000
 
 ```
 index.html        页面骨架
-css/style.css     样式（窄屏自适应）
+css/style.css     基础布局与操作控件
+css/tavern.css    酒馆大厅、棋盘、响应式卡框与战斗特效
+assets/           原创场景与角色 WebP 图集
+js/art.js         角色和法术的图集坐标
+js/combat-fx.js   可加速、跳过的攻击与粒子动画
 js/data.js        种族、关键词、随从（约 100 张）、法术、英雄、饰品
 js/engine.js      规则引擎：卡池、招募动作、三连、战斗模拟、回合流程、AI
 js/sfx.js         设置存储与 WebAudio 合成音效
