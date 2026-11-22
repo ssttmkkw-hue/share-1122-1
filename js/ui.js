@@ -78,7 +78,44 @@ function makeCard(v, zone) {
   return el;
 }
 /** 按 uid 键控的增量渲染，保证动画元素不被销毁 */
+/* FLIP：记录变更前各卡牌在屏幕上的中心点，变更后让移动了的卡牌从旧位置平滑滑到新位置。
+   以中心点计算，避免入场缩放动画干扰；正在冲锋的攻击者（带内联 transform）不参与。 */
+const motionOff = window.matchMedia('(prefers-reduced-motion: reduce)');
+function flipMeasure(row) {
+  const pos = new Map();
+  for (const c of row.children) {
+    if (!c.dataset.uid || c.style.transform) continue;
+    const r = c.getBoundingClientRect();
+    pos.set(c, { x: r.left + r.width / 2, y: r.top + r.height / 2 });
+  }
+  return pos;
+}
+function flipPlay(first, ms) {
+  const moved = [];
+  for (const [el, f] of first) {
+    if (!el.isConnected) continue;
+    if (el._flip) { el._flip.cancel(); el._flip = null; }
+    moved.push([el, f]);
+  }
+  if (UI.skip || motionOff.matches) return;
+  for (const [el, f] of moved) {
+    const r = el.getBoundingClientRect();
+    const dx = f.x - (r.left + r.width / 2), dy = f.y - (r.top + r.height / 2);
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+    const a = el.animate([{ transform: `translate(${dx}px,${dy}px)` }, { transform: 'translate(0,0)' }],
+      { duration: ms, easing: 'cubic-bezier(.22,.8,.24,1)', composite: 'add' });
+    el._flip = a;
+    if (typeof replayAnimations !== 'undefined' && zoneIsReplay(el)) { a.playbackRate = UI.speed; replayAnimations.add(a); }
+    a.onfinish = a.oncancel = () => { if (el._flip === a) el._flip = null; if (typeof replayAnimations !== 'undefined') replayAnimations.delete(a); };
+  }
+}
+function zoneIsReplay(el) { return el.dataset.zone === 'cb'; }
 function reconcile(row, views, zone, opts = {}) {
+  const first = opts.flip ? flipMeasure(row) : null;
+  reconcileDom(row, views, zone, opts);
+  if (first) flipPlay(first, opts.flip);
+}
+function reconcileDom(row, views, zone, opts) {
   const old = new Map();
   [...row.children].forEach(c => { if (c.dataset.uid) old.set(c.dataset.uid, c); else c.remove(); });
   views.forEach((v, i) => {
@@ -136,7 +173,7 @@ function renderRecruit() {
   // 酒馆
   const shopViews = p.shop.map(m => Object.assign(minionView(m), { price: RULES.buyCost }));
   if (p.shopSpell) shopViews.push({ uid: 'spell-' + p.shopSpell + '-' + GAME.turn, spell: p.shopSpell });
-  reconcile($('#shopRow'), shopViews, 'shop', { animateNew: true, empty: '酒馆空空如也' });
+  reconcile($('#shopRow'), shopViews, 'shop', { animateNew: true, flip: 220, empty: '酒馆空空如也' });
   $('#shopRow').classList.toggle('frozen', p.frozen);
   $('#shopLabel').textContent = p.frozen ? '酒馆随从 · 已冻结' : '酒馆随从';
   [...$('#shopRow').children].forEach(el => {
@@ -145,10 +182,10 @@ function renderRecruit() {
     el.classList.toggle('cant', p.gold < cost);
   });
   // 战场
-  reconcile($('#boardRow'), p.board.map(m => minionView(m, p.board)), 'board', { animateNew: true, empty: '把随从拖到这里，或点击手牌打出' });
+  reconcile($('#boardRow'), p.board.map(m => minionView(m, p.board)), 'board', { animateNew: true, flip: 220, empty: '把随从拖到这里，或点击手牌打出' });
   // 手牌
   const hand = p.hand.map(x => x.spell ? { uid: x.uid, spell: x.spell } : x.reward ? { uid: x.uid, reward: true, tier: x.tier } : minionView(x));
-  reconcile($('#handRow'), hand, 'hand', { animateNew: true });
+  reconcile($('#handRow'), hand, 'hand', { animateNew: true, flip: 220 });
   // 英雄栏
   renderHeroBar(p);
   $('#btnEnd').disabled = false;
@@ -664,8 +701,8 @@ function renderSnap(s, prev, reborn = []) {
       }
     }
   }
-  reconcile($('#shopRow'), snapViews(s[1]), 'cb', { animateNew: true });
-  reconcile($('#boardRow'), snapViews(s[0]), 'cb', { animateNew: true });
+  reconcile($('#shopRow'), snapViews(s[1]), 'cb', { animateNew: true, flip: 300 });
+  reconcile($('#boardRow'), snapViews(s[0]), 'cb', { animateNew: true, flip: 300 });
   $('#shopRow').classList.remove('frozen');
   if (prev) diffFx(prev, s, reborn);
 }
