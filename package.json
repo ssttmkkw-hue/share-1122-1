@@ -1,0 +1,16 @@
+{
+  "name": "mistharbor-autochess",
+  "version": "1.0.0",
+  "private": true,
+  "description": "雾港棋馆：浏览器酒馆自走棋 + 联机服务器",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

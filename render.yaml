@@ -1,0 +1,13 @@
+# Render 一键部署：Dashboard → New → Blueprint → 选择本仓库
+services:
+  - type: web
+    name: mistharbor-autochess
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

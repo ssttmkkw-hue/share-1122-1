@@ -446,3 +446,39 @@ button:focus-visible { outline: 2px solid var(--lantern); outline-offset: 2px; }
   .trinket { width: 26px; height: 26px; font-size: 14px; }
   .pick-tk { padding: 5px 7px; }
 }
+
+/* ---------------- 主菜单 / 联机 ---------------- */
+.menu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 6px 0 16px; }
+.menu-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px; border-radius: 14px; cursor: pointer; text-align: left;
+  background: linear-gradient(180deg, #2b1e16, #1a120d); border: 1px solid rgba(201,162,90,.5); transition: transform .15s, border-color .15s; }
+.menu-btn:hover { transform: translateY(-3px); border-color: var(--lantern); }
+.menu-btn b { font-family: var(--f-display); font-size: 20px; font-weight: 900; color: var(--brass-hi); }
+.menu-btn small { color: #c9c0ad; font-size: 12.5px; line-height: 1.5; }
+.mb-ic { font-size: 28px; line-height: 1; }
+.menu-form { display: flex; flex-direction: column; }
+.inp { background: rgba(0,0,0,.35); border: 1px solid rgba(201,162,90,.45); color: var(--paper); border-radius: 9px; padding: 8px 10px; font: inherit; min-width: 0; }
+.inp:focus { outline: 2px solid var(--lantern); outline-offset: 1px; }
+.code-inp { width: 110px; text-transform: uppercase; letter-spacing: .3em; font-family: var(--f-num); font-size: 18px; text-align: center; }
+.room-list { display: flex; flex-direction: column; gap: 6px; }
+.room-item { display: grid; grid-template-columns: 70px 1fr auto; gap: 10px; align-items: center; padding: 9px 12px; border-radius: 10px; cursor: pointer; text-align: left;
+  background: rgba(0,0,0,.25); border: 1px solid rgba(143,169,171,.2); }
+.room-item:hover { border-color: var(--lantern); }
+.room-item b { font-family: var(--f-num); font-size: 18px; letter-spacing: .15em; color: var(--lantern); font-weight: 400; }
+.room-item span:last-child { color: var(--fog); font-size: 12px; }
+.room-meta { font-size: 12px; color: var(--fog); margin-top: 4px; }
+.net-status { margin-top: 12px; font-size: 12.5px; color: var(--fog); min-height: 1.2em; }
+.net-status.ok { color: var(--good); } .net-status.bad { color: var(--bad); } .net-status.wait { color: var(--lantern); }
+.room-code { font-family: var(--f-num); font-weight: 400; letter-spacing: .25em; color: var(--lantern); margin-left: 8px; }
+.room-players { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 6px 0 10px; }
+.rp { padding: 9px 12px; border-radius: 10px; background: rgba(0,0,0,.28); border: 1px solid rgba(143,169,171,.2); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rp.you { border-color: var(--lantern); }
+.rp.ai { color: var(--fog); border-style: dashed; }
+.queue-box { display: flex; align-items: center; gap: 20px; padding: 16px 0; flex-wrap: wrap; }
+.queue-n { font-family: var(--f-num); font-size: 64px; line-height: 1; color: var(--lantern); }
+.queue-n small { font-size: 22px; color: var(--fog); margin-left: 4px; }
+.hero-card.chosen { border-color: var(--good); box-shadow: 0 0 0 2px rgba(127,209,122,.4); }
+.hero-card:disabled:not(.chosen) { opacity: .45; cursor: default; }
+.lb-item.human .lb-hero { border-color: #8fd3ff; }
+.lb-off { font-size: 10px; color: var(--fog); background: rgba(255,255,255,.08); padding: 0 4px; border-radius: 4px; }
+.btn-end.waiting { background: linear-gradient(180deg, #5e7d80, #2e4a4e); color: #e8f2f2; border-color: #8fa9ab; box-shadow: 0 3px 0 #16282b; font-size: 16px; }
+.waiting-banner { font-size: 18px !important; animation: none !important; }

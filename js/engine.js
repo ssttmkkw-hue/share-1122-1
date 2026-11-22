@@ -67,27 +67,34 @@ function newPlayer(id, heroId, isHuman, name) {
     upgradeCost: RULES.upgradeBase[2] + 1, board: [], hand: [], shop: [], shopSpell: null,
     frozen: false, alive: true, place: 0, lastOpp: null, powerUsed: false, freeRefreshes: 0,
     nextGold: 0, shopBonus: { atk: 0, hp: 0 }, lastBoard: [], discoverQ: [], history: [], trinkets: [], trinketOffer: null,
-    ai: isHuman ? null : { levelBias: Math.random() * 2 - 1, greed: Math.random() },
+    ai: { levelBias: Math.random() * 2 - 1, greed: Math.random() }, auto: false,
   };
 }
 
 function heroChoices(n = 4) { return sample(Object.keys(HEROES), n); }
 
-function newGame(humanHero) {
+/** seats：长度 8 的数组，元素为 { name, hero }（真人）或空（AI） */
+function newGameSeats(seats, aiLevel = 'normal') {
   UID = 1;
   const tribes = sample(TRIBE_KEYS, RULES.lobbyTribes);
-  const g = { turn: 0, players: [], pool: {}, tribes, deadOrder: [], lastDead: null, over: false, log: [] };
+  const g = { turn: 0, players: [], pool: {}, tribes, deadOrder: [], lastDead: null, over: false, log: [], aiLevel: AI_LEVELS[aiLevel] ? aiLevel : 'normal' };
   GAME = g;
   for (const id in CARDS) {
     const d = CARDS[id];
     if (!d.token && poolEligible(d)) g.pool[id] = RULES.poolCopies[d.tier];
   }
-  const others = shuffle(Object.keys(HEROES).filter(h => h !== humanHero));
-  g.players.push(newPlayer(0, humanHero, true, '你'));
-  for (let i = 1; i < 8; i++) g.players.push(newPlayer(i, others[i - 1], false));
+  const used = new Set(seats.filter(Boolean).map(x => x.hero));
+  const free = shuffle(Object.keys(HEROES).filter(h => !used.has(h)));
+  let k = 0;
+  for (let i = 0; i < 8; i++) {
+    const st = seats[i];
+    if (st) g.players.push(newPlayer(i, st.hero, true, st.name));
+    else g.players.push(newPlayer(i, free[k++] || rnd(Object.keys(HEROES)), false));
+  }
   startTurnAll();
   return g;
 }
+function newGame(humanHero, aiLevel) { return newGameSeats([{ name: '你', hero: humanHero }], aiLevel); }
 function poolEligible(d) {
   return !d.token && (d.tribes.length === 0 || d.tribes.some(t => t === 'all' || (GAME && GAME.tribes.includes(t))));
 }
@@ -724,7 +731,8 @@ function ghostOf(dead) {
 function finishRecruit() {
   const g = GAME;
   for (const p of alivePlayers()) {
-    if (!p.isHuman) aiRecruit(p);
+    if (!p.isHuman || p.auto) aiRecruit(p);
+    else autoResolvePending(p);
     endTurn(p);
     p.lastBoard = p.board.map(m => Object.assign({}, m, { kw: Object.assign({}, m.kw), dr: m.dr.map(e => Object.assign({}, e)) }));
     p.lastTier = p.tier;
@@ -734,7 +742,7 @@ function finishRecruit() {
     ? g.nextPairs.map(([a, b]) => [byId(a), byId(b)]) : makePairs();
   return pairs.map(([a, b]) => {
     const human = a.isHuman || b.isHuman;
-    const [x, y] = b.isHuman ? [b, a] : [a, b];
+    const [x, y] = b.isHuman && !a.isHuman ? [b, a] : [a, b];
     const c = new Combat(x, y, human);
     c.run();
     return { a: x, b: y, combat: c, human };
@@ -770,6 +778,20 @@ function applyResults(results) {
 function nextTurn() { startTurnAll(); }
 
 /* ---------------- AI ---------------- */
+const AI_LEVELS = {
+  easy:   { name: '简单', bias: -1.3, noise: 14, triple: 3,  tribe: 0.4, commit: 0, sellMargin: 99, roll: false, power: 0.5, freeze: 0,   sim: 0 },
+  normal: { name: '普通', bias: 0,    noise: 2,  triple: 9,  tribe: 1.5, commit: 5, sellMargin: 4,  roll: true,  power: 1,   freeze: 0.5, sim: 0 },
+  hard:   { name: '困难', bias: 0.3,  noise: 0,  triple: 14, tribe: 2.6, commit: 10, sellMargin: 1, roll: true,  power: 1,   freeze: 1,   sim: 10 },
+};
+function aiCfg(p) { return AI_LEVELS[p.aiLevel || (p.isHuman ? 'normal' : (GAME.aiLevel || 'normal'))]; }
+/** 回合结束时仍未处理的发现 / 饰品自动选择 */
+function autoResolvePending(p) {
+  while (p.discoverQ.length) resolveDiscover(p, 0);
+  if (p.trinketOffer) {
+    const c = p.trinketOffer.filter(id => TRINKETS[id].cost <= p.gold);
+    if (c.length) actPickTrinket(p, c[0]); else p.trinketOffer = null;
+  }
+}
 function minionValue(m, p) {
   const d = CARDS[m.id];
   let v = m.atk + m.hp + d.tier * 2.5 + (m.golden ? 6 : 0);
@@ -785,16 +807,21 @@ function minionValue(m, p) {
   if (d.echo || d.soul) v += 6;
   if (p) {
     const tribeCount = t => p.board.filter(x => x !== m && isT(x, t)).length;
-    for (const t of d.tribes) v += tribeCount(t) * 1.5;
+    const tw = aiCfg(p).tribe;
+    for (const t of d.tribes) v += tribeCount(t) * tw;
   }
   return v;
 }
 function shopValue(m, p) {
   let v = minionValue(m, p);
   const copies = [...p.board, ...p.hand].filter(x => isMinion(x) && x.id === m.id && !x.golden).length;
-  v += copies * 9;
+  const cfg = aiCfg(p);
+  v += copies * cfg.triple + Math.random() * cfg.noise;
   const main = mainTribe(p);
-  if (main && isT(m, main)) v += 5;
+  if (main && GAME.turn >= 4) {
+    if (isT(m, main)) v += cfg.commit;
+    else if (cfg.commit > 6 && CARDS[m.id].tribes.length && p.board.filter(x => isT(x, main)).length >= 3) v -= 3;
+  }
   return v;
 }
 function mainTribe(p) {
@@ -805,7 +832,7 @@ function mainTribe(p) {
   return best;
 }
 function desiredTier(p) {
-  const t = GAME.turn + Math.round(p.ai.levelBias);
+  const t = GAME.turn + Math.round(p.ai.levelBias * 0.6 + aiCfg(p).bias);
   return t <= 1 ? 1 : t <= 3 ? 2 : t <= 5 ? 3 : t <= 7 ? 4 : t <= 9 ? 5 : 6;
 }
 function aiPickTarget(p, item, list) {
@@ -867,7 +894,7 @@ function aiRecruit(p) {
       const best = p.shop.reduce((a, b) => (shopValue(a, p) >= shopValue(b, p) ? a : b));
       const w = aiWeakest(p);
       const full = p.board.length >= RULES.boardMax;
-      if (!full || (w && shopValue(best, p) > minionValue(w, p) + 4)) { actBuy(p, best.uid); continue; }
+      if (!full || (w && shopValue(best, p) > minionValue(w, p) + aiCfg(p).sellMargin)) { actBuy(p, best.uid); continue; }
     }
     if (p.shopSpell) {
       const s = SPELLS[p.shopSpell];
@@ -875,7 +902,7 @@ function aiRecruit(p) {
       if (useful && p.gold >= s.cost && p.gold - s.cost >= (p.gold >= 6 ? 3 : 0) && p.hand.length < RULES.handMax) { actBuySpell(p); continue; }
     }
     const ps = powerState(p);
-    if (!ps.passive && ps.can && (p.gold - pw.cost >= 3 || p.gold < 3 + pw.cost)) {
+    if (!ps.passive && ps.can && Math.random() < aiCfg(p).power && (p.gold - pw.cost >= 3 || p.gold < 3 + pw.cost)) {
       let t = null;
       if (pw.target) t = aiPickTarget(p, {}, p.board.filter(pw.target));
       if (actPower(p, t && t.uid).ok) continue;
@@ -883,13 +910,13 @@ function aiRecruit(p) {
     if (p.tier < 6 && p.gold >= p.upgradeCost && p.tier < desiredTier(p) + (p.ai.levelBias > 0.5 ? 1 : 0) && p.gold - p.upgradeCost >= 0) {
       if (actUpgrade(p).ok) continue;
     }
-    if (p.gold >= RULES.buyCost + refreshCost(p) || (refreshCost(p) === 0 && p.gold >= RULES.buyCost)) {
+    if (aiCfg(p).roll && (p.gold >= RULES.buyCost + refreshCost(p) || (refreshCost(p) === 0 && p.gold >= RULES.buyCost))) {
       if (actRefresh(p).ok) continue;
     }
     break;
   }
   // 有好东西没钱买时偶尔冻结
-  if (p.shop.some(m => shopValue(m, p) > 30) && p.gold < 3 && Math.random() < 0.5) p.frozen = true;
+  if (p.shop.some(m => shopValue(m, p) > 30) && p.gold < 3 && Math.random() < aiCfg(p).freeze) p.frozen = true;
   aiArrange(p);
 }
 function aiArrange(p) {
@@ -901,6 +928,79 @@ function aiArrange(p) {
     return 2;
   };
   p.board.sort((a, b) => key(a) - key(b));
+  if (aiCfg(p).sim) aiOptimizeOrder(p, aiCfg(p).sim);
+}
+/** 困难 AI：用其他玩家上一场的阵容模拟战斗，挑选胜率最高的站位 */
+function aiOptimizeOrder(p, tries) {
+  if (p.board.length < 2) return;
+  const opps = alivePlayers().filter(o => o !== p && o.lastBoard && o.lastBoard.length);
+  if (!opps.length) return;
+  const cands = [p.board.slice()];
+  for (let i = 0; i < tries; i++) cands.push(shuffle(p.board.slice()));
+  let best = cands[0], bestScore = -Infinity;
+  for (const order of cands) {
+    let sc = 0;
+    for (let k = 0; k < 6; k++) {
+      const o = opps[k % opps.length];
+      const me = { ghost: true, hero: p.hero, tier: p.tier, trinkets: p.trinkets, board: order };
+      const op = { ghost: true, hero: o.hero, tier: o.lastTier || o.tier, trinkets: o.trinkets, board: o.lastBoard };
+      const r = new Combat(me, op, false).run();
+      sc += r.winner === 0 ? 1 + r.dmg / 20 : r.winner === 1 ? -1 - r.dmg / 20 : 0;
+    }
+    if (sc > bestScore) { bestScore = sc; best = order; }
+  }
+  p.board.splice(0, p.board.length, ...best);
+}
+
+/* ---------------- 统一动作入口（单机 / 服务器共用） ---------------- */
+const ACTIONS = {
+  buy: (p, uid) => actBuy(p, +uid),
+  buySpell: p => actBuySpell(p),
+  sell: (p, uid) => actSell(p, +uid),
+  move: (p, uid, to) => actMove(p, +uid, +to || 0),
+  play: (p, uid, pos, t, o) => actPlay(p, +uid, pos == null ? null : +pos, t == null ? null : +t, { magnetize: !!(o && o.magnetize) }),
+  refresh: p => actRefresh(p),
+  freeze: p => actFreeze(p),
+  upgrade: p => actUpgrade(p),
+  power: (p, t) => actPower(p, t == null ? null : +t),
+  discover: (p, i) => { if (!p.discoverQ.length) return fail('没有待选择的发现'); resolveDiscover(p, Math.max(0, Math.min(2, +i || 0))); return ok(); },
+  trinket: (p, id) => actPickTrinket(p, String(id)),
+};
+function applyAction(pid, name, args) {
+  const p = GAME && GAME.players[pid];
+  const f = Object.prototype.hasOwnProperty.call(ACTIONS, name) ? ACTIONS[name] : null;
+  if (!f || !p || !p.alive) return fail('无效的操作');
+  if (!Array.isArray(args)) args = [];
+  try { return f(p, ...args.slice(0, 4)) || ok(); } catch (e) { return fail('操作失败'); }
+}
+/** 某个玩家能看到的局面（隐藏其他人的手牌、酒馆和当前战场） */
+const PRIVATE_KEYS = ['board', 'hand', 'shop', 'shopSpell', 'gold', 'maxGold', 'upgradeCost', 'frozen', 'powerUsed', 'freeRefreshes', 'nextGold', 'shopBonus', 'discoverQ', 'trinketOffer', 'lastTriple', 'ai'];
+function viewFor(pid) {
+  const g = GAME;
+  const players = g.players.map(p => {
+    const o = {};
+    for (const k in p) if (p.id === pid ? k !== 'ai' : !PRIVATE_KEYS.includes(k)) o[k] = p[k];
+    if (p.id !== pid) { o.board = []; o.hand = []; o.shop = []; o.discoverQ = []; }
+    return o;
+  });
+  return JSON.parse(JSON.stringify({ turn: g.turn, tribes: g.tribes, pool: g.pool, players, deadOrder: g.deadOrder,
+    lastDead: g.lastDead ? g.lastDead.id : null, over: g.over, nextPairs: g.nextPairs, aiLevel: g.aiLevel }));
+}
+/** 生成某一方视角的战斗回放数据（side=1 时左右翻转） */
+function combatPayload(r, side) {
+  const c = r.combat, me = side === 0 ? r.a : r.b, op = side === 0 ? r.b : r.a;
+  const flip = side === 1;
+  const frames = c.frames.map(f => {
+    if (!flip) return f;
+    const o = Object.assign({}, f, { s: [f.s[1], f.s[0]] });
+    if (f.side != null) o.side = 1 - f.side;
+    if (f.hero != null) o.hero = 1 - f.hero;
+    return o;
+  });
+  const w = c.result.winner;
+  return { frames, result: { winner: flip && w >= 0 ? 1 - w : w, dmg: c.result.dmg },
+    opp: { id: op.id, name: op.name, hero: op.hero, hp: op.hp, armor: op.armor, tier: op.tier, ghost: !!op.ghost, isHuman: !!op.isHuman },
+    heroes: [me.hero, op.hero] };
 }
 
 /* ---------------- 存档 ---------------- */
