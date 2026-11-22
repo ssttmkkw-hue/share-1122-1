@@ -103,7 +103,7 @@ function flipPlay(first, ms) {
     const dx = f.x - (r.left + r.width / 2), dy = f.y - (r.top + r.height / 2);
     if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
     const a = el.animate([{ transform: `translate(${dx}px,${dy}px)` }, { transform: 'translate(0,0)' }],
-      { duration: ms, easing: 'cubic-bezier(.22,.8,.24,1)', composite: 'add' });
+      { duration: ms, easing: 'cubic-bezier(.3,.6,.25,1)', composite: 'add' });
     el._flip = a;
     if (typeof replayAnimations !== 'undefined' && zoneIsReplay(el)) { a.playbackRate = UI.speed; replayAnimations.add(a); }
     a.onfinish = a.oncancel = () => { if (el._flip === a) el._flip = null; if (typeof replayAnimations !== 'undefined') replayAnimations.delete(a); };
@@ -117,13 +117,21 @@ function reconcile(row, views, zone, opts = {}) {
 }
 function reconcileDom(row, views, zone, opts) {
   const old = new Map();
-  [...row.children].forEach(c => { if (c.dataset.uid) old.set(c.dataset.uid, c); else c.remove(); });
+  const wanted = new Set(views.map(v => String(v.uid)));
+  // 先移除离场的卡牌，否则后面每张卡都会被 insertBefore 挪动一次，重播入场动画造成抖动
+  [...row.children].forEach(c => {
+    if (c.dataset.uid && wanted.has(c.dataset.uid)) old.set(c.dataset.uid, c);
+    else c.remove();
+  });
   views.forEach((v, i) => {
     const key = String(v.uid);
     let el = old.get(key);
     if (!el) {
       el = makeCard(v, zone);
-      if (opts.animateNew) el.classList.add('enter');
+      if (opts.animateNew) {
+        el.classList.add('enter');
+        el.addEventListener('animationend', e => { if (e.animationName === 'pop') el.classList.remove('enter'); });
+      }
     } else {
       old.delete(key);
       el.dataset.zone = zone;
@@ -701,8 +709,8 @@ function renderSnap(s, prev, reborn = []) {
       }
     }
   }
-  reconcile($('#shopRow'), snapViews(s[1]), 'cb', { animateNew: true, flip: 300 });
-  reconcile($('#boardRow'), snapViews(s[0]), 'cb', { animateNew: true, flip: 300 });
+  reconcile($('#shopRow'), snapViews(s[1]), 'cb', { animateNew: true, flip: 340 });
+  reconcile($('#boardRow'), snapViews(s[0]), 'cb', { animateNew: true, flip: 340 });
   $('#shopRow').classList.remove('frozen');
   if (prev) diffFx(prev, s, reborn);
 }
